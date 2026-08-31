@@ -32,6 +32,7 @@ export interface DialogSelectProps<T> {
   onMove?: (option: DialogSelectOption<T>) => void
   onFilter?: (query: string) => void
   onSelect?: (option: DialogSelectOption<T>) => void
+  onClose?: () => void
   skipFilter?: boolean
   renderFilter?: boolean
   locked?: boolean
@@ -563,7 +564,7 @@ export function DialogSelect<T>(props: DialogSelectProps<T>) {
               {props.title}
             </text>
           )}
-          <text fg={theme.textMuted} onMouseUp={() => dialog.clear()}>
+          <text fg={theme.textMuted} onMouseUp={() => (props.onClose ? props.onClose() : dialog.clear())}>
             esc
           </text>
         </box>

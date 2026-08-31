@@ -42,7 +42,7 @@ export function loadDialogSessionList<T>(input: {
   )
 }
 
-export function DialogSessionList() {
+export function DialogSessionList(props: { onClose?: () => void; global?: boolean } = {}) {
   const dialog = useDialog()
   const route = useRoute()
   const sync = useSync()
@@ -58,19 +58,22 @@ export function DialogSessionList() {
   const deleteHint = useCommandShortcut("session.delete")
   const quickSwitch1 = useCommandShortcut("session.quick_switch.1")
   const quickSwitch9 = useCommandShortcut("session.quick_switch.9")
+  const filter = () => sync.session.query()
+  const list = (query: ReturnType<typeof createDialogSessionListQuery>) =>
+    props.global ? sdk.client.experimental.session.list(query) : sdk.client.session.list(query)
 
   const [browseResults, { refetch: refetchBrowse }] = createResource(
-    () => sync.session.query(),
-    (filter) => loadDialogSessionList({ filter, list: (query) => sdk.client.session.list(query) }),
+    filter,
+    (filter) => loadDialogSessionList({ filter, list }),
   )
   const [searchResults, { refetch }] = createResource(
-    () => ({ query: search(), filter: sync.session.query() }),
+    () => ({ query: search(), filter: filter() }),
     (input) => {
       if (!input.query) return undefined
       return loadDialogSessionList({
         search: input.query,
         filter: input.filter,
-        list: (query) => sdk.client.session.list(query),
+        list,
       })
     },
   )
@@ -236,9 +239,14 @@ export function DialogSessionList() {
       const isDeleting = toDelete() === x.id
       const status = sync.data.session_status?.[x.id]
       const isWorking = status?.type === "busy" || status?.type === "retry"
+      const isWaiting = sync.data.session.some(
+        (session) => (session.id === x.id || session.parentID === x.id) && (sync.data.question[session.id]?.length ?? 0) > 0,
+      )
       const slot = slotByID.get(x.id)
-      const gutter = isWorking
-        ? () => <Spinner />
+      const gutter = isWaiting
+        ? () => <text fg={theme.warning}>?</text>
+        : isWorking
+          ? () => <Spinner />
         : slot !== undefined
           ? () => <text fg={theme.accent}>{slot}</text>
           : undefined
@@ -277,6 +285,7 @@ export function DialogSessionList() {
       preserveSelection={true}
       current={currentSessionID()}
       onFilter={setSearch}
+      onClose={props.onClose}
       onMove={() => {
         setToDelete(undefined)
       }}
@@ -285,7 +294,8 @@ export function DialogSessionList() {
           type: "session",
           sessionID: option.value,
         })
-        dialog.clear()
+        if (props.onClose) props.onClose()
+        else dialog.clear()
       }}
       actions={[
         {

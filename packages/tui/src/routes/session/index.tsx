@@ -82,6 +82,7 @@ import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
+import { DialogSessionList } from "../../component/dialog-session-list"
 
 addDefaultParsers(parsers.parsers)
 
@@ -256,6 +257,8 @@ export function Session() {
   const dimensions = useTerminalDimensions()
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
+  const [sessionListOpen, setSessionListOpen] = createSignal(false)
+  const [sessionListWidth, setSessionListWidth] = kv.signal("session_list_width", 60)
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
@@ -276,7 +279,9 @@ export function Session() {
     return false
   })
   const showTimestamps = createMemo(() => timestamps() === "show")
-  const contentWidth = createMemo(() => dimensions().width - (sidebarVisible() ? 42 : 0) - 4)
+  const contentWidth = createMemo(
+    () => dimensions().width - (sidebarVisible() ? 42 : 0) - (sessionListOpen() ? sessionListWidth() + 1 : 0) - 4,
+  )
   const providers = createMemo(() => Model.index(sync.data.provider))
 
   const scrollAcceleration = createMemo(() => getScrollAcceleration(tuiConfig))
@@ -354,6 +359,26 @@ export function Session() {
   const keymap = useOpencodeKeymap()
   const dialog = useDialog()
   const renderer = useRenderer()
+  const closeSessionList = () => {
+    setSessionListOpen(false)
+    setTimeout(() => prompt?.focus(), 1)
+  }
+  const stopSessionListClose = keymap.intercept(
+    "key",
+    ({ event, consume }) => {
+      if (!sessionListOpen()) return
+      if (event.ctrl || event.meta || event.shift) return
+      if (event.name !== "right" && event.name !== "escape") return
+      consume()
+      if (event.name === "right") {
+        keymap.dispatchCommand("dialog.select.submit")
+        return
+      }
+      closeSessionList()
+    },
+    { priority: 1000 },
+  )
+  onCleanup(stopSessionListClose)
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
@@ -1114,6 +1139,27 @@ export function Session() {
   }))
 
   useBindings(() => ({
+    priority: 1000,
+    enabled:
+      !sessionListOpen() &&
+      dialog.stack.length === 0 &&
+      renderer.currentFocusedEditor !== null &&
+      !renderer.currentFocusedEditor.plainText &&
+      !prompt?.current.input &&
+      prompt?.current.parts.length === 0,
+    bindings: [{ key: "left", cmd: () => setSessionListOpen(true) }],
+  }))
+
+  useBindings(() => ({
+    priority: 1000,
+    enabled: sessionListOpen(),
+    bindings: [
+      { key: "shift+left", cmd: () => setSessionListWidth(() => Math.max(48, sessionListWidth() - 4)) },
+      { key: "shift+right", cmd: () => setSessionListWidth(() => Math.min(80, sessionListWidth() + 4)) },
+    ],
+  }))
+
+  useBindings(() => ({
     mode: OPENCODE_BASE_MODE,
     enabled: foregroundTasks().length > 0,
     priority: 1,
@@ -1155,6 +1201,15 @@ export function Session() {
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
+  const refreshSession = setInterval(() => {
+    void sdk.client.session.get({ sessionID: route.sessionID }).then((result) => {
+      const current = sync.session.get(route.sessionID)
+      if (!result.data || !current || result.data.time.updated <= current.time.updated) return
+      return sync.session.sync(route.sessionID, { force: true })
+    })
+  }, 3000)
+  onCleanup(() => clearInterval(refreshSession))
+
   return (
     <LocationProvider location={location()}>
       <context.Provider
@@ -1176,6 +1231,19 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
+          <Show when={sessionListOpen()}>
+            <box width={sessionListWidth()} minWidth={48} maxWidth={80} flexShrink={0} backgroundColor={theme.backgroundPanel}>
+              <DialogSessionList onClose={closeSessionList} global />
+            </box>
+            <box
+              width={2}
+              flexShrink={0}
+              backgroundColor={theme.border}
+              onMouseDrag={(event) => {
+                setSessionListWidth(() => Math.max(48, Math.min(80, event.x)))
+              }}
+            />
+          </Show>
           <box flexGrow={1} minHeight={0} paddingBottom={1} paddingLeft={2} paddingRight={2} gap={1}>
             <Show when={session()}>
               <scrollbox
