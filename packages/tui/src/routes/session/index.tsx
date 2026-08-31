@@ -1201,15 +1201,6 @@ export function Session() {
   // snap to bottom when session changes
   createEffect(on(() => route.sessionID, toBottom))
 
-  const refreshSession = setInterval(() => {
-    void sdk.client.session.get({ sessionID: route.sessionID }).then((result) => {
-      const current = sync.session.get(route.sessionID)
-      if (!result.data || !current || result.data.time.updated <= current.time.updated) return
-      return sync.session.sync(route.sessionID, { force: true })
-    })
-  }, 3000)
-  onCleanup(() => clearInterval(refreshSession))
-
   return (
     <LocationProvider location={location()}>
       <context.Provider
