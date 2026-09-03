@@ -1141,6 +1141,7 @@ export function Session() {
   useBindings(() => ({
     priority: 1000,
     enabled:
+      tuiConfig.session_list_mode === "docked" &&
       !sessionListOpen() &&
       dialog.stack.length === 0 &&
       renderer.currentFocusedEditor !== null &&
@@ -1152,7 +1153,7 @@ export function Session() {
 
   useBindings(() => ({
     priority: 1000,
-    enabled: sessionListOpen(),
+    enabled: tuiConfig.session_list_mode === "docked" && sessionListOpen(),
     bindings: [
       { key: "shift+left", cmd: () => setSessionListWidth(() => Math.max(48, sessionListWidth() - 4)) },
       { key: "shift+right", cmd: () => setSessionListWidth(() => Math.min(80, sessionListWidth() + 4)) },
@@ -1222,7 +1223,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <Show when={sessionListOpen()}>
+          <Show when={tuiConfig.session_list_mode === "docked" && sessionListOpen()}>
             <box width={sessionListWidth()} minWidth={48} maxWidth={80} flexShrink={0} backgroundColor={theme.backgroundPanel}>
               <DialogSessionList onClose={closeSessionList} global />
             </box>

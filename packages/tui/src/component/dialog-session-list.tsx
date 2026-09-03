@@ -239,9 +239,14 @@ export function DialogSessionList(props: { onClose?: () => void; global?: boolea
       const isDeleting = toDelete() === x.id
       const status = sync.data.session_status?.[x.id]
       const isWorking = status?.type === "busy" || status?.type === "retry"
+      const isWaiting = sync.data.session.some(
+        (session) => (session.id === x.id || session.parentID === x.id) && (sync.data.question[session.id]?.length ?? 0) > 0,
+      )
       const slot = slotByID.get(x.id)
-      const gutter = isWorking
-        ? () => <Spinner />
+      const gutter = isWaiting
+        ? () => <text fg={theme.warning}>?</text>
+        : isWorking
+          ? () => <Spinner />
         : slot !== undefined
           ? () => <text fg={theme.accent}>{slot}</text>
           : undefined
