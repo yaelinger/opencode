@@ -23,6 +23,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
 import { isRecord } from "@/util/record"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ActionPolicy } from "@/permission/action-policy"
 
 const MCP_RESOURCE_TOOLS = {
   list: "list_mcp_resources",
@@ -56,7 +57,20 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   const truncate = yield* Truncate.Service
   const flags = yield* RuntimeFlags.Service
 
-  const context = (args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
+  const policy = (tool: string, args: Record<string, unknown>, options: ToolExecutionOptions) =>
+    permission
+      .ask({
+        permission: tool,
+        patterns: ["*"],
+        always: ["*"],
+        metadata: { tool, args, policyOnly: true },
+        sessionID: input.session.id,
+        tool: { messageID: input.processor.message.id, callID: options.toolCallId },
+        ruleset: [{ permission: tool, pattern: "*", action: "allow" }],
+      })
+      .pipe(Effect.orDie)
+
+  const context = (tool: string, args: Record<string, unknown>, options: ToolExecutionOptions): Tool.Context => ({
     sessionID: input.session.id,
     abort: options.abortSignal!,
     messageID: input.processor.message.id,
@@ -82,6 +96,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       permission
         .ask({
           ...req,
+          metadata: { tool, args, ...req.metadata, policyChecked: req.metadata.policyOnly !== true },
           sessionID: input.session.id,
           tool: { messageID: input.processor.message.id, callID: options.toolCallId },
           ruleset: Permission.merge(input.agent.permission, input.session.permission ?? []),
@@ -102,7 +117,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
       execute(args, options) {
         return run.promise(
           Effect.gen(function* () {
-            const ctx = context(args, options)
+            ActionPolicy.appendAttribution(item.id, args)
+            const ctx = context(item.id, args, options)
+            yield* policy(item.id, args, options)
             yield* plugin.trigger(
               "tool.execute.before",
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
@@ -156,7 +173,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(MCP_RESOURCE_TOOLS.list, toRecord(args), opts)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -239,7 +256,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseListMcpResourcesArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(MCP_RESOURCE_TOOLS.listTemplates, toRecord(args), opts)
             const clients = yield* mcp.clients()
             const resourceServers = Object.entries(clients)
               .filter((entry) => !!entry[1].getServerCapabilities()?.resources)
@@ -326,7 +343,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
         return run.promise(
           Effect.gen(function* () {
             const parsed = parseReadMcpResourceArgs(args)
-            const ctx = context(toRecord(args), opts)
+            const ctx = context(MCP_RESOURCE_TOOLS.read, toRecord(args), opts)
             const clients = yield* mcp.clients()
             const client = clients[parsed.server]
             if (!client) {
@@ -398,7 +415,9 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
     item.execute = (args, opts) =>
       run.promise(
         Effect.gen(function* () {
-          const ctx = context(args, opts)
+          ActionPolicy.appendAttribution(key, args)
+          const ctx = context(key, args, opts)
+          yield* policy(key, args, opts)
           yield* plugin.trigger(
             "tool.execute.before",
             { tool: key, sessionID: ctx.sessionID, callID: opts.toolCallId },

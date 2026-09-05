@@ -381,6 +381,8 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
           }
 
           const current = info()
+          const policyReason =
+            typeof props.request.metadata?.policyReason === "string" ? props.request.metadata.policyReason : undefined
 
           const header = () => (
             <box flexDirection="column" gap={0}>
@@ -394,6 +396,9 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
                 </text>
                 <text fg={theme.text}>{current.title}</text>
               </box>
+              <Show when={policyReason}>
+                <text fg={theme.warning} paddingLeft={2}>{policyReason}</text>
+              </Show>
             </box>
           )
 
@@ -402,7 +407,11 @@ export function PermissionPrompt(props: { request: PermissionRequest; directory?
               title="Permission required"
               header={header()}
               body={current.body}
-              options={{ once: "Allow once", always: "Allow always", reject: "Reject" }}
+              options={{
+                once: "Allow once",
+                ...(props.request.always.length > 0 ? { always: "Allow always" } : {}),
+                reject: "Reject",
+              }}
               escapeKey="reject"
               fullscreen
               onSelect={(option) => {

@@ -6,6 +6,7 @@ import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@opencode-ai/core/v1/permission"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { ActionPolicy } from "./action-policy"
 
 export const Event = PermissionV1.Event
 
@@ -67,9 +68,26 @@ const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
+      const policy = yield* Effect.promise(() => ActionPolicy.load())
+      const classified = policy.enabled && request.metadata.policyChecked !== true
+        ? ActionPolicy.classify(
+            {
+              tool: typeof request.metadata.tool === "string" ? request.metadata.tool : request.permission,
+              args: request.metadata.args,
+            },
+            policy.rules,
+          )
+        : { decision: "allow" as const }
+      if (classified.decision === "deny") {
+        return yield* new PermissionV1.DeniedError({ ruleset })
+      }
       let needsAsk = false
 
       for (const pattern of request.patterns) {
+        if (classified.decision === "ask") {
+          needsAsk = true
+          continue
+        }
         const rule = evaluate(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
@@ -89,8 +107,8 @@ const layer = Layer.effect(
         sessionID: request.sessionID,
         permission: request.permission,
         patterns: request.patterns,
-        metadata: request.metadata,
-        always: request.always,
+        metadata: { ...request.metadata, policyReason: classified.reason },
+        always: classified.decision === "ask" ? [] : request.always,
         tool: request.tool,
       }
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })

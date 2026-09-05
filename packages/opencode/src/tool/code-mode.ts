@@ -8,6 +8,7 @@ import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
+import { ActionPolicy } from "@/permission/action-policy"
 
 export const CODE_MODE_TOOL = "execute"
 
@@ -138,13 +139,19 @@ const invokeChildTool = Effect.fn("CodeMode.invokeChildTool")(function* (input: 
   callID: string
   ctx: Tool.Context
 }) {
+  ActionPolicy.appendAttribution(input.entry.key, input.args)
   yield* input.plugin.trigger(
     "tool.execute.before",
     { tool: input.entry.key, sessionID: input.ctx.sessionID, callID: input.callID },
     { args: input.args },
   )
   const result: CallToolResult = yield* Effect.gen(function* () {
-    yield* input.ctx.ask({ permission: input.entry.key, metadata: {}, patterns: ["*"], always: ["*"] })
+    yield* input.ctx.ask({
+      permission: input.entry.key,
+      metadata: { tool: input.entry.key, args: input.args },
+      patterns: ["*"],
+      always: ["*"],
+    })
     // Deliberately mirrors McpCatalog.convertTool's transport call so the MCP service stays free of tool-loop concerns.
     return yield* Effect.promise(async () => {
       const raw = await input.entry.tool.client.callTool(

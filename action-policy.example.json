@@ -1,0 +1,11 @@
+{
+  "enabled": true,
+  "rules": [
+    {
+      "name": "Example: deny staging deploys",
+      "decision": "deny",
+      "tool": "bash",
+      "pattern": "deploy.*staging|staging.*deploy"
+    }
+  ]
+}
