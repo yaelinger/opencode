@@ -258,7 +258,12 @@ export function Session() {
   const [sidebar, setSidebar] = kv.signal<"auto" | "hide">("sidebar", "auto")
   const [sidebarOpen, setSidebarOpen] = createSignal(false)
   const [sessionListOpen, setSessionListOpen] = createSignal(false)
+  const [centeredSessionListOpen, setCenteredSessionListOpen] = createSignal(false)
   const [sessionListWidth, setSessionListWidth] = kv.signal("session_list_width", 60)
+  const [sessionListMode, setSessionListMode] = kv.signal<"centered" | "docked">(
+    "session_list_mode",
+    tuiConfig.session_list_mode ?? "centered",
+  )
   const [conceal, setConceal] = createSignal(true)
   const thinking = useThinkingMode()
   const thinkingMode = thinking.mode
@@ -363,6 +368,11 @@ export function Session() {
     setSessionListOpen(false)
     setTimeout(() => prompt?.focus(), 1)
   }
+  const closeCenteredSessionList = () => {
+    setCenteredSessionListOpen(false)
+    dialog.clear()
+    setTimeout(() => prompt?.focus(), 1)
+  }
   const stopSessionListClose = keymap.intercept(
     "key",
     ({ event, consume }) => {
@@ -379,6 +389,22 @@ export function Session() {
     { priority: 1000 },
   )
   onCleanup(stopSessionListClose)
+  const stopCenteredSessionListKeys = keymap.intercept(
+    "key",
+    ({ event, consume }) => {
+      if (!centeredSessionListOpen() || dialog.stack.length === 0) return
+      if (event.ctrl || event.meta || event.shift) return
+      if (event.name !== "left" && event.name !== "right" && event.name !== "escape") return
+      consume()
+      if (event.name === "right") {
+        keymap.dispatchCommand("dialog.select.submit")
+        return
+      }
+      closeCenteredSessionList()
+    },
+    { priority: 1000 },
+  )
+  onCleanup(stopCenteredSessionListKeys)
 
   event.on("session.status", (evt) => {
     if (evt.properties.sessionID !== route.sessionID) return
@@ -693,6 +719,28 @@ export function Session() {
           sessionID: route.sessionID,
           messageID: message.id,
         })
+      },
+    },
+    {
+      title: "Use centered session list",
+      value: "session.list.centered",
+      category: "Session",
+      enabled: sessionListMode() !== "centered",
+      run: () => {
+        closeSessionList()
+        setSessionListMode(() => "centered")
+        dialog.clear()
+      },
+    },
+    {
+      title: "Use docked session list",
+      value: "session.list.docked",
+      category: "Session",
+      enabled: sessionListMode() !== "docked",
+      run: () => {
+        dialog.clear()
+        setCenteredSessionListOpen(false)
+        setSessionListMode(() => "docked")
       },
     },
     {
@@ -1141,7 +1189,7 @@ export function Session() {
   useBindings(() => ({
     priority: 1000,
     enabled:
-      tuiConfig.session_list_mode === "docked" &&
+      sessionListMode() === "docked" &&
       !sessionListOpen() &&
       dialog.stack.length === 0 &&
       renderer.currentFocusedEditor !== null &&
@@ -1153,7 +1201,27 @@ export function Session() {
 
   useBindings(() => ({
     priority: 1000,
-    enabled: tuiConfig.session_list_mode === "docked" && sessionListOpen(),
+    enabled:
+      sessionListMode() === "centered" &&
+      dialog.stack.length === 0 &&
+      renderer.currentFocusedEditor !== null &&
+      !renderer.currentFocusedEditor.plainText &&
+      !prompt?.current.input &&
+      prompt?.current.parts.length === 0,
+    bindings: [
+      {
+        key: "left",
+        cmd: () => {
+          setCenteredSessionListOpen(true)
+          dialog.replace(() => <DialogSessionList onClose={closeCenteredSessionList} global />)
+        },
+      },
+    ],
+  }))
+
+  useBindings(() => ({
+    priority: 1000,
+    enabled: sessionListMode() === "docked" && sessionListOpen(),
     bindings: [
       { key: "shift+left", cmd: () => setSessionListWidth(() => Math.max(48, sessionListWidth() - 4)) },
       { key: "shift+right", cmd: () => setSessionListWidth(() => Math.min(80, sessionListWidth() + 4)) },
@@ -1223,7 +1291,7 @@ export function Session() {
         }}
       >
         <box flexDirection="row" flexGrow={1} minHeight={0}>
-          <Show when={tuiConfig.session_list_mode === "docked" && sessionListOpen()}>
+          <Show when={sessionListMode() === "docked" && sessionListOpen()}>
             <box width={sessionListWidth()} minWidth={48} maxWidth={80} flexShrink={0} backgroundColor={theme.backgroundPanel}>
               <DialogSessionList onClose={closeSessionList} global />
             </box>
